@@ -379,7 +379,7 @@ export default function Step2() {
         </div>
         
         {/* --- MAIN BUTTON AND PRICE --- */}
-        <a href="https://pay.hotmart.com/P102903672F?checkoutMode=10" className="mt-6 block w-full bg-green-500 hover:bg-green-600 text-white font-bold text-lg py-4 rounded-lg transition-colors shadow-lg hover:shadow-xl">
+        <a href="https://go.hotmart.com/H103012511W?ap=d293" className="mt-6 block w-full bg-green-500 hover:bg-green-600 text-white font-bold text-lg py-4 rounded-lg transition-colors shadow-lg hover:shadow-xl">
           🔓 YES, I WANT THE COMPLETE REPORT
         </a>
         <div className="mt-4 text-center">
