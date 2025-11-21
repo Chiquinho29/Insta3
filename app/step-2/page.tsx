@@ -95,11 +95,15 @@ const setAvatarLocalCache = (user: string, url: string) => {
 const warmup = (user: string) => {
   if (!user) return
 
-  fetch(`../perfil/get_profile.php?u=${encodeURIComponent(user)}&nocache=1`)
+  fetch("/api/instagram/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: user }),
+  })
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (j && j.success && j.image) {
-        setAvatarLocalCache(user, j.image)
+      if (j && j.success && j.profile && j.profile.profile_pic_url) {
+        setAvatarLocalCache(user, j.profile.profile_pic_url)
       }
     })
     .catch(() => {
