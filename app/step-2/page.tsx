@@ -94,19 +94,17 @@ const setAvatarLocalCache = (user: string, url: string) => {
 
 const warmup = (user: string) => {
   if (!user) return
-  // Chamada silenciosa que ignora cache fresco do servidor para aquecer.
-  fetch(`/api/instagram/profile?u=${encodeURIComponent(user)}&nocache=1`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: user }),
-  })
+
+  fetch(`../perfil/get_profile.php?u=${encodeURIComponent(user)}&nocache=1`)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (j && j.success && j.profile?.profile_pic_url) {
-        setAvatarLocalCache(user, j.profile.profile_pic_url)
+      if (j && j.success && j.image) {
+        setAvatarLocalCache(user, j.image)
       }
     })
-    .catch(() => {})
+    .catch(() => {
+      // Erro silencioso
+    })
 }
 
 const getProfileFromCache = (user: string): any | null => {
