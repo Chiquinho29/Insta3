@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { User, CheckCircle, Heart, MessageCircle, Lock, AlertTriangle, Wifi, LockOpen } from "lucide-react"
-import { useRouter } from "next/router"
 
 // ==========================================================
 // DADOS DOS PERFIS E IMAGENS
@@ -83,17 +82,33 @@ const sanitizeUsername = (username: string): string => {
   u = u.toLowerCase()
   return u.replace(/[^a-z0-9._]/g, "")
 }
-const setProfileLocalCache = (user: string, profile: any) => {
-  if (!user || !profile) return
+const setAvatarLocalCache = (user: string, url: string) => {
+  if (!user || !url) return
   try {
-    const key = "igProfileCacheV1"
+    const key = "igAvatarCacheV1"
     const cache = JSON.parse(localStorage.getItem(key) || "{}") || {}
-    cache[user] = { profile, ts: Date.now() }
+    cache[user] = { url, ts: Date.now() }
     localStorage.setItem(key, JSON.stringify(cache))
-  } catch (e) {
-    console.error("[v0] Erro ao salvar perfil no cache:", e)
-  }
+  } catch (e) {}
 }
+
+const warmup = (user: string) => {
+  if (!user) return
+  // Chamada silenciosa que ignora cache fresco do servidor para aquecer.
+  fetch(`/api/instagram/profile?u=${encodeURIComponent(user)}&nocache=1`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: user }),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (j && j.success && j.profile?.profile_pic_url) {
+        setAvatarLocalCache(user, j.profile.profile_pic_url)
+      }
+    })
+    .catch(() => {})
+}
+
 const getProfileFromCache = (user: string): any | null => {
   try {
     const key = "igProfileCacheV1"
@@ -105,49 +120,6 @@ const getProfileFromCache = (user: string): any | null => {
     console.error("[v0] Erro ao ler o cache do perfil:", e)
   }
   return null
-}
-
-const setAvatarLocalCache = (user: string, url: string) => {
-  if (!user || !url) return
-  try {
-    const key = "igAvatarCacheV1"
-    const cache = JSON.parse(localStorage.getItem(key) || "{}") || {}
-    cache[user] = { url, ts: Date.now() }
-    localStorage.setItem(key, JSON.stringify(cache))
-  } catch (e) {
-    console.error("[v0] Erro ao salvar avatar no cache:", e)
-  }
-}
-
-const getAvatarFromCache = (user: string): string | null => {
-  try {
-    const key = "igAvatarCacheV1"
-    const cache = JSON.parse(localStorage.getItem(key) || "{}") || {}
-    if (cache[user] && cache[user].url) {
-      return cache[user].url
-    }
-  } catch (e) {
-    console.error("[v0] Erro ao ler cache do avatar:", e)
-  }
-  return null
-}
-
-const warmup = async (user: string) => {
-  if (!user) return
-  try {
-    const response = await fetch("/api/instagram/profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user, nocache: true }),
-    })
-    const result = await response.json()
-    if (result.success && result.profile?.profile_pic_url) {
-      const proxyUrl = `/api/instagram/image?url=${encodeURIComponent(result.profile.profile_pic_url)}`
-      setAvatarLocalCache(user, proxyUrl)
-    }
-  } catch (e) {
-    console.error("[v0] Warmup error:", e)
-  }
 }
 
 const PageHeader = () => (
@@ -177,8 +149,6 @@ export default function Step2() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const debounceTimer = useRef<NodeJS.Timeout | null>(null)
   const [timeLeft, setTimeLeft] = useState(5 * 60)
-  const router = useRouter()
-  let warmupTimer: NodeJS.Timeout | null = null // Declare warmupTimer here
 
   // Estados para armazenar os resultados sorteados
   const [randomizedResults, setRandomizedResults] = useState<
@@ -247,64 +217,48 @@ export default function Step2() {
   const handleInstagramChange = (value: string) => {
     setInstagramHandle(value)
     const sanitizedUser = sanitizeUsername(value)
-
     if (debounceTimer.current) clearTimeout(debounceTimer.current)
-
     setError("")
     setProfileData(null)
     setProfileImageUrl(null)
-
     if (sanitizedUser.length < 3) {
       setIsLoading(false)
       return
     }
 
     if (sanitizedUser.length >= 3) {
-      if (warmupTimer) clearTimeout(warmupTimer)
-      warmupTimer = setTimeout(() => warmup(sanitizedUser), 700)
+      const WARMUP_DELAY = 700
+      setTimeout(() => warmup(sanitizedUser), WARMUP_DELAY)
     }
 
     setIsLoading(true)
-
     debounceTimer.current = setTimeout(async () => {
-      const cachedAvatar = getAvatarFromCache(sanitizedUser)
-      if (cachedAvatar) {
-        setProfileImageUrl(cachedAvatar)
-      }
-
       const cachedProfile = getProfileFromCache(sanitizedUser)
       if (cachedProfile) {
         setProfileData(cachedProfile)
-        if (cachedProfile.profile_pic_url && !cachedAvatar) {
+        if (cachedProfile.profile_pic_url) {
           const proxyUrl = `/api/instagram/image?url=${encodeURIComponent(cachedProfile.profile_pic_url)}`
           setProfileImageUrl(proxyUrl)
-          setAvatarLocalCache(sanitizedUser, proxyUrl)
         }
         setIsLoading(false)
         return
       }
-
       try {
         const response = await fetch("/api/instagram/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: sanitizedUser }),
         })
-
         const result = await response.json()
-
         if (!response.ok || !result.success) {
           throw new Error(result.error || "Perfil não encontrado ou privado.")
         }
-
         const profile = result.profile
         setProfileData(profile)
-        setProfileLocalCache(sanitizedUser, profile)
-
         if (profile.profile_pic_url) {
           const proxyUrl = `/api/instagram/image?url=${encodeURIComponent(profile.profile_pic_url)}`
           setProfileImageUrl(proxyUrl)
-          setAvatarLocalCache(sanitizedUser, proxyUrl)
+          setAvatarLocalCache(sanitizedUser, profile.profile_pic_url)
         }
       } catch (err: any) {
         setError(err.message)
@@ -316,6 +270,10 @@ export default function Step2() {
   }
 
   const handleContinueClick = () => {
+    try {
+      warmup(sanitizeUsername(instagramHandle))
+    } catch (e) {}
+
     setStep(2)
     setLoadingProgress(0)
     const interval = setInterval(() => {
@@ -335,25 +293,9 @@ export default function Step2() {
     }, 4000)
   }
 
-  const handleSubmit = () => {
-    if (!profileData || isLoading) return
-
-    try {
-      const sanitizedUser = sanitizeUsername(instagramHandle)
-      if (sanitizedUser) {
-        warmup(sanitizedUser)
-      }
-    } catch (e) {
-      console.error("[v0] Warmup error on submit:", e)
-    }
-
-    router.push("/step-3")
-  }
-
   useEffect(
     () => () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      if (warmupTimer) clearTimeout(warmupTimer)
     },
     [],
   )
@@ -475,7 +417,7 @@ export default function Step2() {
         {!isLoading && profileData && renderProfileCard(profileData)}
       </div>
       <button
-        onClick={handleSubmit}
+        onClick={handleContinueClick}
         disabled={!profileData || isLoading}
         className="w-full py-4 text-lg font-bold text-white bg-gradient-to-r from-pink-500 to-purple-600 rounded-lg shadow-lg transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
       >
